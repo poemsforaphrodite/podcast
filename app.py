@@ -101,11 +101,12 @@ def search_instagram_posts(username, max_results=10):
     """
     actor_input = {
         "directUrls": [f"https://www.instagram.com/{username}"],
-        "resultsType": "posts",
+        "resultsType": "stories",
         "resultsLimit": max_results
     }
     
     try:
+        st.write(f"Calling Apify for username: {username}")  # Log the API call
         run = apify_client.actor("shu8hvrXbJbY3Eb9W").call(run_input=actor_input)
         return apify_client.dataset(run["defaultDatasetId"]).list_items().items
     except Exception as e:
@@ -160,7 +161,7 @@ def perplexity_search(input_text, prompt_template):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "sonar-reasoning-pro",
+                "model": "sonar-pro",
                 "messages": [
                     {"role": "system", "content": "Return JSON response"},
                     {"role": "user", "content": prompt_template.format(input_text)}
@@ -297,7 +298,16 @@ def gemini_process_video(video_url):
 
         time.sleep(10)  # Wait for processing
 
-        prompt = "Please identify the podcast and episode from this video, including links if available."
+        prompt = """Please analyze this video and return the information in the following JSON format:
+        {
+            "title": "The title of the YouTube video",
+            "channel": "The name of the YouTube channel",
+            "channelLink": "The link to the YouTube channel",
+            "url": "The direct URL to the YouTube video"
+        }
+        
+        If any field cannot be determined, use an empty string."""
+
         payload = {
             "contents": [
                 {
@@ -324,7 +334,7 @@ def gemini_process_video(video_url):
                                 .get("text", "No analysis returned"))
 
         os.unlink(video_path)
-        return {"analysis": analysis_text}
+        return {"raw_response": analysis_text}
 
     except Exception as e:
         if 'video_path' in locals() and video_path:
@@ -542,7 +552,7 @@ def analyze_selected_posts(posts, selected_ids, method):
                 if method == "Caption":
                     logging.debug(f"Input text: {post.get('caption', '')}")
                     prompt = """
-                    From this Instagram caption: '{}', find the exact YouTube podcast/channel and return the response in JSON format with the following fields: title, channel, channel link, and url.
+                    From this Instagram caption: '{}', find the exact YouTube podcast/channel and return the response in JSON format with the following fields: title, channel, channel link, the exact youtube url for the podcast/channel, we want full video of the podcast. 
                     """
                     result = perplexity_search(
                         post.get('caption', ''),
@@ -565,7 +575,13 @@ def analyze_selected_posts(posts, selected_ids, method):
                 elif method == "Transcription" and post.get('videoUrl'):
                     transcript = transcribe_video_content(post['videoUrl'])
                     prompt = """
-                    Given podcast transcription: '{}', find YouTube link/channel and return in JSON format with title, channel, channel link, and url.
+                    Given podcast transcription: '{}', find YouTube link/channel and return the response in JSON format with the following fields:
+                    - title: The title of the YouTube video
+                    - channel: The name of the YouTube channel
+                    - channelLink: The link to the YouTube channel
+                    - url: The direct URL to the YouTube video
+                    
+                    If any field cannot be determined, use an empty string.
                     """
                     result = perplexity_search(transcript, prompt)
                     logging.debug(f"Post ID: {post['id']}, Result: {result}")
@@ -613,9 +629,12 @@ def main():
         st.header("Discover Trending Content")
         query = st.text_input("Search terms", placeholder="Enter topic or keywords")
         
+        # Add slider for number of results
+        max_results = st.slider("Number of results to show", min_value=1, max_value=50, value=10, key="natural_search_slider")
+        
         if st.button("Search", type="primary"):
             with st.spinner("Searching YouTube..."):
-                results = search_youtube_podcasts(query)
+                results = search_youtube_podcasts(query, max_results)
                 render_youtube_results(results)
     
     with tab_specific:
@@ -633,9 +652,27 @@ def main():
                             ["Caption", "Transcription", "Gemini"], 
                             horizontal=True)
         
+        # New input field for Instagram usernames
+        instagram_usernames = st.text_input("Enter Instagram usernames (comma-separated)", placeholder="username1, username2")
+        
+        # Add a slider for the number of posts
+        num_posts = st.slider("Number of posts to load", min_value=1, max_value=50, value=10)
+
         if st.button("Load Posts", type="primary"):
             with st.spinner("Loading Instagram posts..."):
-                st.session_state.current_posts = search_instagram_posts(channel, 10)
+                # Split the input into a list of usernames
+                usernames_list = [username.strip() for username in instagram_usernames.split(',') if username.strip()]
+                
+                # If the input is empty, use the selected channel as the username
+                if not usernames_list:
+                    usernames_list = [channel]  # Use the selected channel as the username
+                
+                st.session_state.current_posts = []
+                for username in usernames_list:
+                    st.write(f"Searching posts for username: {username}")  # Log the username being searched
+                    posts = search_instagram_posts(username, num_posts)  # Use the slider value
+                    st.write(f"Found {len(posts)} posts for {username}")  # Log the number of posts found
+                    st.session_state.current_posts.extend(posts)
                 st.session_state.selected_posts = {}  # Reset selections
         
         if st.session_state.current_posts:

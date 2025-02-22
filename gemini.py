@@ -52,7 +52,7 @@ print("Waiting for video processing...")
 time.sleep(10)
 
 # === Step 3: Call generateContent to summarize the video ===
-prompt = "Please tell me which podcast is this video from? Also tell me the podcast link, Can you also tell me the exact episode (with link)"
+prompt = "Can you tell who is the person in this video?"
 payload = {
     "contents": [
         {
