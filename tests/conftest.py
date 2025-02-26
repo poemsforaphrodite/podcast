@@ -1,7 +1,7 @@
 import pytest
 import os
 import tempfile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 @pytest.fixture
 def mock_env(monkeypatch):
@@ -59,4 +59,83 @@ def sample_youtube_result():
         "duration": "1:00:00",
         "date": "2024-02-26",
         "url": "https://youtube.com/watch?v=test123"
-    } 
+    }
+
+# Common test data
+@pytest.fixture
+def sample_youtube_results():
+    return [
+        {
+            'id': '1',
+            'title': 'Sleep Science Explained',
+            'channelName': 'Health Podcast',
+            'viewCount': 10000,
+            'date': '2024-02-01',
+            'url': 'https://youtube.com/watch?v=1'
+        },
+        {
+            'id': '2',
+            'title': 'Understanding Sleep Cycles',
+            'channelName': 'Science Channel',
+            'viewCount': 20000,
+            'date': '2024-02-02',
+            'url': 'https://youtube.com/watch?v=2'
+        }
+    ]
+
+@pytest.fixture
+def sample_instagram_posts():
+    return [
+        {
+            'id': 'post1',
+            'caption': 'Check out our latest podcast episode on sleep science',
+            'likesCount': 1000,
+            'commentsCount': 50,
+            'timestamp': '2024-02-01T12:00:00Z'
+        },
+        {
+            'id': 'post2',
+            'caption': 'New podcast episode about sleep cycles',
+            'likesCount': 2000,
+            'commentsCount': 100,
+            'timestamp': '2024-02-02T12:00:00Z'
+        }
+    ]
+
+# Mock environment variables
+@pytest.fixture(autouse=True)
+def mock_env_vars():
+    with patch.dict('os.environ', {
+        'OPENAI_API_KEY': 'test-key',
+        'APIFY_API_TOKEN': 'test-token',
+        'PERPLEXITY_API_KEY': 'test-key',
+        'GEMINI_API_KEY': 'test-key'
+    }):
+        yield
+
+# Mock responses
+@pytest.fixture
+def mock_successful_response():
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {'success': True}
+    return mock_response
+
+@pytest.fixture
+def mock_error_response():
+    mock_response = Mock()
+    mock_response.status_code = 400
+    mock_response.json.return_value = {'error': 'Test error'}
+    return mock_response
+
+# Session state fixture for Streamlit tests
+@pytest.fixture
+def mock_streamlit_session_state():
+    with patch('streamlit.session_state', {
+        'selected_posts': {},
+        'current_posts': [],
+        'analysis_results': [],
+        'analyze_clicked': False,
+        'search_evaluation': None
+    }) as mock_state:
+        yield mock_state 

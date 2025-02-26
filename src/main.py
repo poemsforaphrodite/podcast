@@ -2,6 +2,7 @@ import streamlit as st
 from src.config.settings import APP_TITLE, APP_ICON, DEFAULT_CHANNELS, ANALYSIS_METHODS
 from src.config.logging_config import setup_logging
 from src.api.apify_client import apify_service
+from src.services.agent_search_service import AgentSearchService
 from src.ui.components.youtube_results import render_youtube_results
 from src.ui.components.instagram_posts import render_instagram_posts
 from src.ui.components.analysis_results import render_analysis_results
@@ -9,6 +10,9 @@ from src.services.analysis_service import analyze_selected_posts
 
 # Setup logging
 logger = setup_logging()
+
+# Initialize agent search service
+agent_search = AgentSearchService()
 
 # Page configuration
 st.set_page_config(
@@ -26,6 +30,8 @@ if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = []
 if 'analyze_clicked' not in st.session_state:
     st.session_state.analyze_clicked = False
+if 'search_evaluation' not in st.session_state:
+    st.session_state.search_evaluation = None
 
 def main():
     """
@@ -39,17 +45,58 @@ def main():
         st.header("Discover Trending Content")
         query = st.text_input("Search terms", placeholder="Enter topic or keywords")
         
-        max_results = st.slider(
-            "Number of results to show",
-            min_value=1,
-            max_value=50,
-            value=10,
-            key="natural_search_slider"
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            search_type = st.radio(
+                "Search Type",
+                ["Non-Agentic", "Agentic"],
+                help="Agentic search uses AI to refine search queries for better results"
+            )
+        
+        with col2:
+            max_results = st.slider(
+                "Number of results to show",
+                min_value=1,
+                max_value=50,
+                value=10,
+                key="natural_search_slider"
+            )
         
         if st.button("Search", type="primary"):
             with st.spinner("Searching YouTube..."):
-                results = apify_service.search_youtube_podcasts(query, max_results)
+                if search_type == "Non-Agentic":
+                    results = apify_service.search_youtube_podcasts(query, max_results)
+                    st.session_state.search_evaluation = None
+                else:
+                    st.info("Using AI agent to find the most relevant podcasts...")
+                    results = []
+                    evaluation = None
+                    
+                    # First search
+                    initial_results = apify_service.search_youtube_podcasts(query, max_results)
+                    if initial_results:
+                        evaluation = agent_search.evaluate_results(query, initial_results)
+                        
+                        if evaluation["satisfied"]:
+                            results = initial_results
+                            st.success("🎯 AI is satisfied with the initial search results!")
+                        else:
+                            st.warning("🔄 Initial results weren't ideal. Trying alternative queries...")
+                            results = agent_search.search(query, max_results)
+                    
+                    st.session_state.search_evaluation = evaluation
+                
+                # Show evaluation details if available
+                if st.session_state.search_evaluation:
+                    with st.expander("Search Evaluation Details", expanded=True):
+                        st.markdown("### AI Evaluation")
+                        st.markdown(f"**Status**: {'✅ Satisfied' if st.session_state.search_evaluation['satisfied'] else '🔄 Required Refinement'}")
+                        st.markdown(f"**Reason**: {st.session_state.search_evaluation['reason']}")
+                        if st.session_state.search_evaluation['suggested_queries']:
+                            st.markdown("**Alternative Queries Tried:**")
+                            for query in st.session_state.search_evaluation['suggested_queries']:
+                                st.markdown(f"- {query}")
+                
                 render_youtube_results(results)
     
     with tab_specific:
